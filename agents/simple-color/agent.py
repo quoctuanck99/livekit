@@ -7,9 +7,7 @@ import wave
 import numpy as np
 import redis
 from dotenv import load_dotenv
-import librosa
 from livekit.rtc import AudioFrame
-import soundfile
 
 load_dotenv()
 from livekit import rtc
