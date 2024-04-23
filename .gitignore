@@ -27,4 +27,6 @@ proto/
 .idea/
 
 dist/
-.env
+agents/simple-color/.env
+
+__pycache__/
