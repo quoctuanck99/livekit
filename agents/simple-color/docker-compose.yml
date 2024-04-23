@@ -3,7 +3,7 @@ version: '3'
 services:
   worker:
     build: .
-    command: tail -f /dev/null #python3 agent.py start
+    command: python3 agent.py start
     volumes:
       - ./.env:/opt/app/.env
     env_file:
