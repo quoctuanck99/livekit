@@ -2,9 +2,14 @@ import asyncio
 import json
 import logging
 import os
+import wave
 
+import numpy as np
 import redis
 from dotenv import load_dotenv
+import librosa
+from livekit.rtc import AudioFrame
+import soundfile
 
 load_dotenv()
 from livekit import rtc
@@ -27,13 +32,53 @@ sub = r.pubsub()
 sub.subscribe("loki")
 
 
+# async def capture_and_send_audio(audio_source, audio_file):
+#     y, sr = librosa.load(audio_file, sr=None, mono=None)
+#     y_bytes = y.tobytes()
+#     audio_frame = AudioFrame(
+#         data=y_bytes, sample_rate=int(sr), num_channels=1, samples_per_channel=len(y)
+#     )
+#     await audio_source.capture_frame(audio_frame)
+
+
+async def capture_and_send_audio(audio_source, audio_file):
+    with wave.open(audio_file, "rb") as wf:
+        num_channels = wf.getnchannels()
+        sample_width = wf.getsampwidth()
+        sample_rate = wf.getframerate()
+        num_frames = wf.getnframes()
+        pcm_data = wf.readframes(num_frames)
+    # Convert PCM data to numpy array
+    y = np.frombuffer(pcm_data, dtype=np.int16)
+    audio_frame = AudioFrame(
+        data=pcm_data,
+        sample_rate=sample_rate,
+        num_channels=num_channels,
+        samples_per_channel=num_frames,
+    )
+
+    await audio_source.capture_frame(audio_frame)
+
+
 async def entrypoint(job: JobContext):
     room = job.room
-    source = rtc.VideoSource(WIDTH, HEIGHT)
-    track = rtc.LocalVideoTrack.create_video_track("single-color", source)
-    options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
-    publication = await room.local_participant.publish_track(track, options)
-    logging.info("published track", extra={"track_sid": publication.sid})
+    video_source = rtc.VideoSource(WIDTH, HEIGHT)
+    video_track = rtc.LocalVideoTrack.create_video_track("single-color", video_source)
+    video_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
+    video_publication = await room.local_participant.publish_track(
+        video_track, video_options
+    )
+
+    audio_source = rtc.AudioSource(24000, 1)
+    audio_track = rtc.LocalAudioTrack.create_audio_track("agent-mic", audio_source)
+    audio_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_UNKNOWN)
+    audio_publication = await room.local_participant.publish_track(
+        audio_track, audio_options
+    )
+
+    logging.info("video_publication", extra={"track_sid": video_publication.sid})
+    logging.info("audio_publication", extra={"track_sid": audio_publication.sid})
+    audio_file = None
 
     async def _draw_color():
         video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
@@ -50,10 +95,12 @@ async def entrypoint(job: JobContext):
             if msg is not None:
                 if "data" in msg and isinstance(msg["data"], str):
                     logging.info(msg)
-                    total_seconds = json.loads(msg["data"]).get("total_seconds")
+                    data = json.loads(msg["data"])
+                    total_seconds = data.get("total_seconds")
                     logging.info(f"Total seconds: {total_seconds}")
                     synced_frame_count = int(total_seconds * 25)
-            logging.info(f"synced_frame_count: {synced_frame_count}")
+                    logging.info(f"synced_frame_count: {synced_frame_count}")
+                    audio_file = data.get("audio_file")
             src_ret, source_frame = video_source_capture.read()
             syn_ret, synced_frame = video_synced_capture.read()
 
@@ -71,8 +118,12 @@ async def entrypoint(job: JobContext):
             argb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
             argb_frame = argb_frame.tobytes()
             frame = rtc.VideoFrame(WIDTH, HEIGHT, rtc.VideoBufferType.RGBA, argb_frame)
-            source.capture_frame(frame)
-            await asyncio.sleep(0.02)  # 100ms
+            if synced_frame_count > 0 and audio_file is not None:
+                logging.info(f">>>>>>>> PLAYING AUDIO")
+                asyncio.create_task(capture_and_send_audio(audio_source, audio_file))
+                audio_file = None
+            video_source.capture_frame(frame)
+            await asyncio.sleep(0.025)  # 100ms
 
     asyncio.create_task(_draw_color())
 
