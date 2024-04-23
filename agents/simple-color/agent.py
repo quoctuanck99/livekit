@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-import random
+import os
 
 import redis
 from dotenv import load_dotenv
@@ -16,11 +16,16 @@ from livekit.agents import (
 )
 import cv2
 
+SOURCE_VIDEO = os.getenv("SOURCE_VIDEO")
+LIPSYNCED_VIDEO = os.getenv("LIPSYNCED_VIDEO")
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
 WIDTH = 540
 HEIGHT = 960
-r = redis.Redis(host="127.0.0.1", port=6378, decode_responses=True)
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 sub = r.pubsub()
 sub.subscribe("loki")
+
 
 async def entrypoint(job: JobContext):
     room = job.room
@@ -31,8 +36,8 @@ async def entrypoint(job: JobContext):
     logging.info("published track", extra={"track_sid": publication.sid})
 
     async def _draw_color():
-        video_source_capture = cv2.VideoCapture("/Users/tuankq/source_code/livekit-demo/server/agents/simple-color/C0492_source.mp4")
-        video_synced_capture = cv2.VideoCapture("/Users/tuankq/source_code/livekit-demo/server/agents/simple-color/C0492_synced.mp4")
+        video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
+        video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
         # Get the total number of frames in the video
         total_source_frames = int(video_source_capture.get(cv2.CAP_PROP_FRAME_COUNT))
         total_synced_frames = int(video_synced_capture.get(cv2.CAP_PROP_FRAME_COUNT))
