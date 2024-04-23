@@ -8,6 +8,8 @@ services:
       - ./.env:/opt/app/.env
     env_file:
       - .env
+    networks:
+      - mynetwork
 networks:
   mynetwork:
-    driver: bridge
+    external: true
