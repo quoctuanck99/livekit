@@ -16,8 +16,8 @@ from livekit.agents import (
 )
 import cv2
 
-WIDTH = 720
-HEIGHT = 1280
+WIDTH = 540
+HEIGHT = 960
 r = redis.Redis(host="127.0.0.1", port=6378, decode_responses=True)
 sub = r.pubsub()
 sub.subscribe("loki")
@@ -31,11 +31,14 @@ async def entrypoint(job: JobContext):
     logging.info("published track", extra={"track_sid": publication.sid})
 
     async def _draw_color():
-        video_source_capture = cv2.VideoCapture("/home/tuankq/workspaces/livekit-demo/server/agents/simple-color/C0492.mp4")
-        video_synced_capture = cv2.VideoCapture("/home/tuankq/workspaces/livekit-demo/server/agents/simple-color/synced.mp4")
+        video_source_capture = cv2.VideoCapture("/Users/tuankq/source_code/livekit-demo/server/agents/simple-color/C0492_source.mp4")
+        video_synced_capture = cv2.VideoCapture("/Users/tuankq/source_code/livekit-demo/server/agents/simple-color/C0492_synced.mp4")
         # Get the total number of frames in the video
-        total_frames = int(video_source_capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        logging.info(f"Total frames in video: {total_frames}")
+        total_source_frames = int(video_source_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        total_synced_frames = int(video_synced_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        logging.info(f"Total frames in source: {total_source_frames}")
+        logging.info(f"Total frames in synced: {total_synced_frames}")
+        total_frames = min(total_source_frames, total_synced_frames)
         synced_frame_count = 0
         while True:
             msg = sub.get_message()
@@ -46,15 +49,20 @@ async def entrypoint(job: JobContext):
                     logging.info(f"Total seconds: {total_seconds}")
                     synced_frame_count = int(total_seconds * 25)
             logging.info(f"synced_frame_count: {synced_frame_count}")
-            if synced_frame_count > 0:
-                ret, frame = video_synced_capture.read()
-                synced_frame_count = synced_frame_count - 1
-            else:
-                ret, frame = video_source_capture.read()
-            if not ret:
+            src_ret, source_frame = video_source_capture.read()
+            syn_ret, synced_frame = video_synced_capture.read()
+
+            if not src_ret or not syn_ret:
                 logging.info("End of video reached. Jumping to start...")
                 video_source_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = video_source_capture.read()
+                video_synced_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                _, source_frame = video_source_capture.read()
+                _, synced_frame = video_synced_capture.read()
+            if synced_frame_count > 0:
+                frame = synced_frame
+                synced_frame_count = synced_frame_count - 1
+            else:
+                frame = source_frame
             argb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
             argb_frame = argb_frame.tobytes()
             frame = rtc.VideoFrame(WIDTH, HEIGHT, rtc.VideoBufferType.RGBA, argb_frame)
