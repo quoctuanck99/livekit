@@ -27,8 +27,7 @@ WIDTH = 540
 HEIGHT = 960
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
-video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
-video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
+
 
 
 async def capture_and_send_audio(audio_source, audio_file):
@@ -51,6 +50,8 @@ async def capture_and_send_audio(audio_source, audio_file):
 
 
 async def entrypoint(job: JobContext):
+    video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
+    video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
     room = job.room
     sub = r.pubsub()
     sub.subscribe(job.room.name)
