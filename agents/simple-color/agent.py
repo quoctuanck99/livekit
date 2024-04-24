@@ -26,17 +26,9 @@ REDIS_PORT = int(os.getenv("REDIS_PORT"))
 WIDTH = 540
 HEIGHT = 960
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-sub = r.pubsub()
-sub.subscribe("loki")
 
-
-# async def capture_and_send_audio(audio_source, audio_file):
-#     y, sr = librosa.load(audio_file, sr=None, mono=None)
-#     y_bytes = y.tobytes()
-#     audio_frame = AudioFrame(
-#         data=y_bytes, sample_rate=int(sr), num_channels=1, samples_per_channel=len(y)
-#     )
-#     await audio_source.capture_frame(audio_frame)
+video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
+video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
 
 
 async def capture_and_send_audio(audio_source, audio_file):
@@ -60,6 +52,9 @@ async def capture_and_send_audio(audio_source, audio_file):
 
 async def entrypoint(job: JobContext):
     room = job.room
+    sub = r.pubsub()
+    sub.subscribe(job.room.name)
+    logging.info(f"start room {room.name}")
     video_source = rtc.VideoSource(WIDTH, HEIGHT)
     video_track = rtc.LocalVideoTrack.create_video_track("single-color", video_source)
     video_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
@@ -79,8 +74,6 @@ async def entrypoint(job: JobContext):
     audio_file = None
 
     async def _draw_color():
-        video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
-        video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
         # Get the total number of frames in the video
         total_source_frames = int(video_source_capture.get(cv2.CAP_PROP_FRAME_COUNT))
         total_synced_frames = int(video_synced_capture.get(cv2.CAP_PROP_FRAME_COUNT))
