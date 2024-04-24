@@ -115,7 +115,7 @@ async def entrypoint(job: JobContext):
                 asyncio.create_task(capture_and_send_audio(audio_source, audio_file))
                 audio_file = None
             video_source.capture_frame(frame)
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.04)
 
     asyncio.create_task(_draw_color())
 
