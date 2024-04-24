@@ -90,7 +90,7 @@ async def entrypoint(job: JobContext):
                     data = json.loads(msg["data"])
                     total_seconds = data.get("total_seconds")
                     logging.info(f"Total seconds: {total_seconds}")
-                    synced_frame_count = int(round(total_seconds)) * 25
+                    synced_frame_count = int(round(total_seconds * 25))
                     logging.info(f"synced_frame_count: {synced_frame_count}")
                     audio_file = data.get("audio_file")
             src_ret, source_frame = video_source_capture.read()
