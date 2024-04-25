@@ -7,6 +7,7 @@ import wave
 import numpy as np
 import redis
 from dotenv import load_dotenv
+from livekit.protocol import agent
 from livekit.rtc import AudioFrame
 
 load_dotenv()
@@ -15,6 +16,7 @@ from livekit.agents import (
     JobContext,
     JobRequest,
     WorkerOptions,
+    AutoDisconnect,
     cli,
 )
 import cv2
@@ -26,8 +28,6 @@ REDIS_PORT = int(os.getenv("REDIS_PORT"))
 WIDTH = 540
 HEIGHT = 960
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-
-
 
 
 async def capture_and_send_audio(audio_source, audio_file):
@@ -50,8 +50,6 @@ async def capture_and_send_audio(audio_source, audio_file):
 
 
 async def entrypoint(job: JobContext):
-    video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
-    video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
     room = job.room
     sub = r.pubsub()
     sub.subscribe(job.room.name)
@@ -75,6 +73,8 @@ async def entrypoint(job: JobContext):
     audio_file = None
 
     async def _draw_color():
+        video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
+        video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
         # Get the total number of frames in the video
         total_source_frames = int(video_source_capture.get(cv2.CAP_PROP_FRAME_COUNT))
         total_synced_frames = int(video_synced_capture.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -82,17 +82,19 @@ async def entrypoint(job: JobContext):
         logging.info(f"Total frames in synced: {total_synced_frames}")
         total_frames = min(total_source_frames, total_synced_frames)
         synced_frame_count = 0
+        frame_index = 0
         while True:
             msg = sub.get_message()
             if msg is not None:
                 if "data" in msg and isinstance(msg["data"], str):
-                    logging.info(msg)
                     data = json.loads(msg["data"])
-                    total_seconds = data.get("total_seconds")
-                    logging.info(f"Total seconds: {total_seconds}")
-                    synced_frame_count = int(round(total_seconds * 25))
-                    logging.info(f"synced_frame_count: {synced_frame_count}")
-                    audio_file = data.get("audio_file")
+                    if data.get("total_seconds"):
+                        logging.info(msg)
+                        total_seconds = data.get("total_seconds")
+                        logging.info(f"Total seconds: {total_seconds}")
+                        synced_frame_count = int(round(total_seconds * 25))
+                        logging.info(f"synced_frame_count: {synced_frame_count}")
+                        audio_file = data.get("audio_file")
             src_ret, source_frame = video_source_capture.read()
             syn_ret, synced_frame = video_synced_capture.read()
 
@@ -121,8 +123,11 @@ async def entrypoint(job: JobContext):
 
 
 async def request_fnc(req: JobRequest) -> None:
-    await req.accept(entrypoint)
+    logging.info(f"request_fnc.room: {req.room}")
+    logging.info(f"request_fnc.id: {req.id}")
+    logging.info(f"request_fnc.job: {req.job}")
+    await req.accept(entrypoint, auto_disconnect="ROOM_EMPTY")
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(request_fnc=request_fnc))
+    cli.run_app(WorkerOptions(request_fnc=request_fnc, load_threshold=2.0))
