@@ -1,0 +1,4 @@
+redis
+opencv-python
+python-dotenv
+wave

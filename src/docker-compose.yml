@@ -1,0 +1,15 @@
+version: '3'
+
+services:
+  worker:
+    build: .
+    command: python3 agent.py start
+    volumes:
+      - ./.env:/opt/app/.env
+    env_file:
+      - .env
+    networks:
+      - mynetwork
+networks:
+  mynetwork:
+    external: true
