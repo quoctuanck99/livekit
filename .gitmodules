@@ -1,3 +1,4 @@
 [submodule "src/agents"]
 	path = src/agents
 	url = https://github.com/livekit/agents.git
+	branch = main
