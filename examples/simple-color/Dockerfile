@@ -16,6 +16,7 @@ ENV PYTHONUNBUFFERED 1
 
 FROM dependencies as pip_packages
 COPY ./requirements.txt ./
+RUN cd /opt/app/agents/livekit-agents/ && pip install .
 RUN pip install -r requirements.txt
 
 FROM pip_packages as sources

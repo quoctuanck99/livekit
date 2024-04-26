@@ -2,8 +2,11 @@ import asyncio
 import json
 import logging
 import os
+import signal
+import sys
 import wave
 
+import livekit.api.room_service
 import numpy as np
 import redis
 from dotenv import load_dotenv
@@ -72,7 +75,7 @@ async def entrypoint(job: JobContext):
     logging.info("audio_publication", extra={"track_sid": audio_publication.sid})
     audio_file = None
 
-    async def _draw_color():
+    async def _publish_frame():
         video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
         video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
         # Get the total number of frames in the video
@@ -88,6 +91,7 @@ async def entrypoint(job: JobContext):
             if msg is not None:
                 if "data" in msg and isinstance(msg["data"], str):
                     data = json.loads(msg["data"])
+                    logging.info(data)
                     if data.get("total_seconds"):
                         logging.info(msg)
                         total_seconds = data.get("total_seconds")
@@ -117,9 +121,10 @@ async def entrypoint(job: JobContext):
                 asyncio.create_task(capture_and_send_audio(audio_source, audio_file))
                 audio_file = None
             video_source.capture_frame(frame)
+            logging.info(f"publish frame index: {frame_index}")
             await asyncio.sleep(0.04)
 
-    asyncio.create_task(_draw_color())
+    asyncio.create_task(_publish_frame())
 
 
 async def request_fnc(req: JobRequest) -> None:
