@@ -3,20 +3,14 @@ import io
 import json
 import logging
 import os
-import signal
-import sys
 import traceback
-import uuid
 import wave
 
 
-import livekit.api.room_service
 import numpy as np
 import redis
 from dotenv import load_dotenv
-from livekit.protocol import agent
 from livekit.rtc import AudioFrame
-from pydub import AudioSegment
 
 load_dotenv()
 from livekit import rtc
