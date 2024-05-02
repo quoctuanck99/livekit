@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import logging
+import math
 import os
 import traceback
 import wave
@@ -25,6 +26,7 @@ import cv2
 
 SOURCE_VIDEO = os.getenv("SOURCE_VIDEO")
 LIPSYNCED_VIDEO = os.getenv("LIPSYNCED_VIDEO")
+LIPSYNC_SIGNAL_CHANNEL = os.getenv("LIPSYNC_SIGNAL_CHANNEL")
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = int(os.getenv("REDIS_PORT"))
 WIDTH = 540
@@ -54,28 +56,26 @@ async def capture_and_send_audio(audio_source, audio_file):
     await audio_source.capture_frame(audio_frame)
 
 
-def calculate_samples_per_channel(raw_bytes_length, sample_rate):
-    # Calculate total number of samples
-    total_samples = (
-        raw_bytes_length // 2
-    )  # Each sample is represented by 2 bytes (16 bits)
-    # Calculate duration in seconds
+def calculate_duration(raw_bytes_length, sample_rate):
+    total_samples = raw_bytes_length // 2
     duration_seconds = total_samples / sample_rate
-    samples_per_channel = sample_rate * duration_seconds
-    return int(samples_per_channel)
+    return duration_seconds
 
 
-async def capture_and_send_audio_from_binary(audio_source, audio_bytes, count):
+async def capture_and_send_audio_from_binary(audio_source, audio_bytes):
+    duration_seconds = calculate_duration(
+        raw_bytes_length=len(audio_bytes), sample_rate=AUDIO_SAMPLE_RATE
+    )
+    samples_per_channel = int(AUDIO_SAMPLE_RATE * duration_seconds)
     audio_frame = AudioFrame(
         data=audio_bytes,
         sample_rate=AUDIO_SAMPLE_RATE,
         num_channels=AUDIO_CHANNEL_NUMBERS,
-        samples_per_channel=calculate_samples_per_channel(
-            len(audio_bytes), AUDIO_SAMPLE_RATE
-        ),
+        samples_per_channel=samples_per_channel,
     )
     #
     await audio_source.capture_frame(audio_frame)
+    return duration_seconds
 
 
 async def entrypoint(job: JobContext):
@@ -100,8 +100,6 @@ async def entrypoint(job: JobContext):
     audio_file = None
 
     async def _publish_audio():
-        count = 0
-        # pass
         try:
             sub = r.pubsub()
             sub.subscribe(str(job.room.name))
@@ -110,31 +108,22 @@ async def entrypoint(job: JobContext):
                 if msg is not None:
                     data = msg["data"]
                     if isinstance(data, bytes):
-                        await capture_and_send_audio_from_binary(
-                            audio_source, data, count
+                        durations = await capture_and_send_audio_from_binary(
+                            audio_source, data
                         )
-                        count = count + 1
+                        r.publish(
+                            LIPSYNC_SIGNAL_CHANNEL.format(job.room.name),
+                            json.dumps({"total_seconds": durations}),
+                        )
                 await asyncio.sleep(0.04)
         except:
             print(f"Error: {traceback.format_exc()}")
-        #         # if msg['type'] == 'message':
-        #         #     print("Received:", msg['data'])
-        #         logging.info(f">>>>>>>>>>>>>{msg}")
-        # if "data" in msg and isinstance(msg["data"], str):
-        #     data = json.loads(msg["data"])
-        #     logging.info(data)
-        #     if data.get("total_seconds"):
-        #         logging.info(msg)
-        #         total_seconds = data.get("total_seconds")
-        #         logging.info(f"Total seconds: {total_seconds}")
-        #         synced_frame_count = int(round(total_seconds * 25))
-        #         logging.info(f"synced_frame_count: {synced_frame_count}")
-        #         audio_file = data.get("audio_file")
 
     async def _publish_frame():
         sub = r.pubsub()
-        sub.subscribe(f"lip:synced:{str(job.room.name)}")
-        logging.info(f"Subscribed to {job.room.name}")
+        lipsync_channel = LIPSYNC_SIGNAL_CHANNEL.format(job.room.name)
+        sub.subscribe(lipsync_channel)
+        logging.info(f"Subscribed to {lipsync_channel}")
         video_source_capture = cv2.VideoCapture(SOURCE_VIDEO)
         video_synced_capture = cv2.VideoCapture(LIPSYNCED_VIDEO)
         # Get the total number of frames in the video
@@ -155,9 +144,13 @@ async def entrypoint(job: JobContext):
                         logging.info(msg)
                         total_seconds = data.get("total_seconds")
                         logging.info(f"Total seconds: {total_seconds}")
-                        synced_frame_count = synced_frame_count + int(
-                            round(total_seconds * 25)
+                        synced_frame_count = synced_frame_count + round(
+                            total_seconds * 25
                         )
+                        if total_seconds >= 0.1:
+                            synced_frame_count = (
+                                synced_frame_count if synced_frame_count >= 5 else 5
+                            )
                         logging.info(f"synced_frame_count: {synced_frame_count}")
             src_ret, source_frame = video_source_capture.read()
             syn_ret, synced_frame = video_synced_capture.read()
